@@ -4,10 +4,9 @@ const app = require('./src/app');
 const { Server } = require('socket.io');
 const connectDB = require('./src/config/db');
 const port = process.env.PORT || 3000;
-const cors = require('cors');
 
-const app = express()
-const server = createServer(app);
+const server = http.createServer(app);
+
 const io = new Server(server, {
     cors: {
         origin: "http://localhost:5173",
@@ -16,32 +15,22 @@ const io = new Server(server, {
     }
 });
 
-const port = 3000
+connectDB();
 
-app.use(cors({
-    origin: "http://localhost:5173",
-    methods: ["GET", "POST"],
-    credentials: true
-}));
+// io.on('connection', (socket) => {
+//     console.log('a user connected', socket.id);
 
-app.get('/', (req, res) => {
-    res.send('Hello World!')
-})
+//     // socket.emit('welcome', `Welcome, ${socket.id}!`);
+//     socket.broadcast.emit('welcome', `Welcome, ${socket.id}!`);
+//     // io.emit('welcome', `Welcome, ${socket.id}!`);
+//     socket.on('message', (msg) => {
+//         io.emit('mess', msg)
+//     })
 
-io.on('connection', (socket) => {
-    console.log('a user connected', socket.id);
-
-    // socket.emit('welcome', `Welcome, ${socket.id}!`);
-    socket.broadcast.emit('welcome', `Welcome, ${socket.id}!`);
-    // io.emit('welcome', `Welcome, ${socket.id}!`);
-    socket.on('message', (msg) => {
-        io.emit('mess', msg)
-    })
-
-    socket.on('disconnect', () => {
-        console.log('user disconnected', socket.id);
-    })
-});
+//     socket.on('disconnect', () => {
+//         console.log('user disconnected', socket.id);
+//     })
+// });
 
 server.listen(port, () => {
     console.log(`Example app listening on port ${port}`)
