@@ -2,16 +2,29 @@ import { useEffect, useState } from 'react'
 import { io } from "socket.io-client";
 
 const App = () => {
+  const token = localStorage.getItem('token');
   const [input, setinput] = useState('')
-  const socket = io("http://localhost:3000");
+  const socket = io("http://localhost:3000", {
+    auth: {
+      token: token
+    }
+  });
 
   useEffect(() => {
     socket.on("connect", () => {
       console.log("hello", socket.id);
     });
 
+    socket.on("me", (user) => {
+      console.log(user.username);
+    });
+
     socket.on("welcome", (message) => {
       console.log(message);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.log('Connection failed:', err.message);
     });
 
     socket.on("mess", (message) => {

@@ -1,8 +1,9 @@
 require('dotenv').config()
 const http = require('node:http');
-const app = require('./src/app');
 const { Server } = require('socket.io');
+const app = require('./src/app');
 const connectDB = require('./src/config/db');
+const initSocket = require('./src/sockets/socket');
 const port = process.env.PORT || 3000;
 
 const server = http.createServer(app);
@@ -16,21 +17,7 @@ const io = new Server(server, {
 });
 
 connectDB();
-
-// io.on('connection', (socket) => {
-//     console.log('a user connected', socket.id);
-
-//     // socket.emit('welcome', `Welcome, ${socket.id}!`);
-//     socket.broadcast.emit('welcome', `Welcome, ${socket.id}!`);
-//     // io.emit('welcome', `Welcome, ${socket.id}!`);
-//     socket.on('message', (msg) => {
-//         io.emit('mess', msg)
-//     })
-
-//     socket.on('disconnect', () => {
-//         console.log('user disconnected', socket.id);
-//     })
-// });
+initSocket(io);
 
 server.listen(port, () => {
     console.log(`Example app listening on port ${port}`)
