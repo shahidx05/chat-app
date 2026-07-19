@@ -15,6 +15,9 @@ const Register = () => {
     try {
       const response = await register(name, username, email, password);
       console.log(response);
+      localStorage.setItem('token', response.token);
+      localStorage.setItem('user', JSON.stringify(response.user));
+      console.log("User registered successfully:", response.user);
       navigate('/');
     }
     catch (error) {

@@ -12,6 +12,8 @@ const Login = () => {
     try {
       const response = await login(email, password);
       console.log(response);
+      localStorage.setItem('token', response.token);
+      localStorage.setItem('user', JSON.stringify(response.user));
       navigate('/');
     }
     catch (error) {

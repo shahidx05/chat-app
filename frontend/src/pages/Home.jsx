@@ -10,6 +10,7 @@ const Home = () => {
   const [message, setMessage] = useState("")
 
   const token = localStorage.getItem('token');
+  const currentUser = JSON.parse(localStorage.getItem("user"));
 
   const socket = useRef(null);
 
@@ -21,7 +22,7 @@ const Home = () => {
     return () => {
       socket.current.disconnect();
     };
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     socket.current.on("connect", () => {
@@ -44,14 +45,63 @@ const Home = () => {
     //   console.log(message);
     // });
 
-    socket.current.on("receive_message", (data) => {
-      console.log(data.message, "from", data.user);
-      setMessages((prevMessages) => [
-        ...prevMessages,
-        { content: data.message, mine: false, _id: Date.now() } 
-      ]);
+    // socket.current.on("receive_message", (data) => {
+    //   console.log(data.message, "from", data.user);
+    //   if (selectedUser && data.user === selectedUser._id) {
+    //     setMessages((prevMessages) => [
+    //       ...prevMessages,
+    //       { content: data.message, mine: false, _id: Date.now() }
+    //     ]);
+    //   }
+    // })
+
+    socket.current.on("online_users", (data) => {
+      console.log("Online users:", data);
+      setUsers(prev =>
+        prev.map(user =>
+          data.includes(user._id)
+            ? { ...user, online: true }
+            : { ...user, online: false }
+        )
+      );
     })
   }, [token]);
+
+  useEffect(() => {
+    const handler = (data) => {
+      if (selectedUser && String(data.sender) === String(selectedUser._id)) {
+        setMessages(prev => [...prev, data]);
+      }
+    };
+
+    socket.current?.on("receive_message", handler);
+    socket.current?.on("user_online", (data) => {
+      console.log(`${data.username} is online`);
+      setUsers(prev =>
+        prev.map(user =>
+          user._id === data.userId
+            ? { ...user, online: true }
+            : user
+        )
+      );
+      selectedUser && selectedUser._id === data.userId && setSelectedUser(prev => ({ ...prev, online: true }));
+    });
+    socket.current?.on("user_offline", (data) => {
+      console.log(`${data.username} is offline`);
+      setUsers(prev =>
+        prev.map(user =>
+          user._id === data.userId
+            ? { ...user, online: false }
+            : user
+        )
+      );
+      selectedUser && selectedUser._id === data.userId && setSelectedUser(prev => ({ ...prev, online: false }));
+    });
+
+    return () => {
+      socket.current?.off("receive_message", handler);
+    };
+  }, [selectedUser]);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -77,6 +127,12 @@ const Home = () => {
     }
   };
 
+  useEffect(() => {
+    if (!selectedUser) return;
+
+    fetchMessages(selectedUser._id);
+  }, [selectedUser]);
+
   return (
     <div className="h-screen flex bg-gray-100">
 
@@ -90,7 +146,7 @@ const Home = () => {
         <div className="flex-1 overflow-y-auto">
           {users.map((user) => (
             <div
-              key={user.id}
+              key={user._id}
               className="flex items-center gap-3 p-4 border-b cursor-pointer hover:bg-gray-100"
             >
               <div className="h-12 w-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
@@ -101,11 +157,7 @@ const Home = () => {
                 <h2 className="font-semibold">{user.name}</h2>
                 <p className="text-sm text-gray-500">
                   <button
-                    onClick={() => {
-                      setSelectedUser(user);
-                      console.log(`Selected user: ${user.name}`);
-                      fetchMessages(user._id);
-                    }}
+                    onClick={() => setSelectedUser(user)}
                   >
                     Click to chat
                   </button>
@@ -130,29 +182,32 @@ const Home = () => {
             <h2 className="font-semibold text-lg">
               {selectedUser ? selectedUser.name : "Select a user"}
             </h2>
-            <p className="text-sm text-green-600">Online</p>
+            <p className="text-sm text-green-600">
+              {selectedUser?.online ? "Online" : "Offline"}
+            </p>
           </div>
         </div>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-6 bg-gray-50 space-y-4">
 
-          {messages.map((msg) => (
-            <div
-              key={msg._id}
-              className={`flex ${msg.mine ? "justify-end" : "justify-start"
-                }`}
-            >
+          {messages.map((msg) => {
+            const mine = String(msg.sender) === String(currentUser.id);
+            return (
               <div
-                className={`px-4 py-2 rounded-xl max-w-sm ${msg.mine
-                  ? "bg-blue-600 text-white"
-                  : "bg-white border"
-                  }`}
+                key={msg._id}
+                className={`flex ${mine ? "justify-end" : "justify-start"}`}
               >
-                {msg.content}
+                <div
+                  className={`px-4 py-2 rounded-xl max-w-sm ${mine
+                    ? "bg-blue-600 text-white"
+                    : "bg-white border"}`}
+                >
+                  {msg.content}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
         </div>
 
@@ -171,12 +226,12 @@ const Home = () => {
             className="bg-blue-600 text-white px-6 rounded-lg hover:bg-blue-700"
             onClick={() => {
               if (message.trim() !== "") {
-                socket.current.emit("send_message", { receiver: selectedUser._id, message });
+                socket.current?.emit("send_message", { receiver: selectedUser._id, message });
                 setMessage("");
                 // Optionally, you can also add the sent message to the messages state
                 setMessages((prevMessages) => [
                   ...prevMessages,
-                  { content: message, mine: true, _id: Date.now() } 
+                  { content: message, sender: currentUser.id, receiver: selectedUser._id, _id: Date.now() }
                 ]);
               }
             }}
