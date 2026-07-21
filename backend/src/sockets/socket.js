@@ -32,7 +32,7 @@ const initSocket = (io) => {
         onlineUsers.set(userId, socket.id); // store the socket ID for this user
         console.log(`✅ ${socket.user.username} connected (${socket.id})`);
 
-        io.emit('user_online', { userId: userId});
+        io.emit('user_online', { userId: userId });
 
         socket.emit("online_users", [...onlineUsers.keys()]);
         // socket.emit("online_users", Array.from(onlineUsers.keys()));
@@ -64,6 +64,13 @@ const initSocket = (io) => {
                 createdAt: message.createdAt
             });
         })
+
+        socket.on('typing', (data) => {
+            socket.to(onlineUsers.get(data.receiver)).emit('typing', {
+                sender: socket.user._id,
+                typing: data.typing
+            });
+        });
 
         socket.on('disconnect', () => {
             onlineUsers.delete(userId);

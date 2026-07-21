@@ -8,11 +8,13 @@ const Home = () => {
   const [messages, setMessages] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [message, setMessage] = useState("")
+  const [isTyping, setIsTyping] = useState(false);
 
   const token = localStorage.getItem('token');
   const currentUser = JSON.parse(localStorage.getItem("user"));
 
   const socket = useRef(null);
+  const typingTimeout = useRef(null);
 
   useEffect(() => {
     socket.current = io("http://localhost:3000", {
@@ -68,14 +70,19 @@ const Home = () => {
   }, [token]);
 
   useEffect(() => {
-    const handler = (data) => {
+    const receiveHandler = (data) => {
       if (selectedUser && String(data.sender) === String(selectedUser._id)) {
         setMessages(prev => [...prev, data]);
       }
     };
 
-    socket.current?.on("receive_message", handler);
-    socket.current?.on("user_online", (data) => {
+    const typingHandler = (data) => {
+      if (selectedUser && String(data.sender) === String(selectedUser._id)) {
+        setIsTyping(data.typing);
+      }
+    };
+
+    const onlineHandler = (data) => {
       console.log(`${data.username} is online`);
       setUsers(prev =>
         prev.map(user =>
@@ -85,8 +92,9 @@ const Home = () => {
         )
       );
       selectedUser && selectedUser._id === data.userId && setSelectedUser(prev => ({ ...prev, online: true }));
-    });
-    socket.current?.on("user_offline", (data) => {
+    };
+
+    const offlineHandler = (data) => {
       console.log(`${data.username} is offline`);
       setUsers(prev =>
         prev.map(user =>
@@ -96,10 +104,18 @@ const Home = () => {
         )
       );
       selectedUser && selectedUser._id === data.userId && setSelectedUser(prev => ({ ...prev, online: false }));
-    });
+    };
+
+    socket.current.on("receive_message", receiveHandler);
+    socket.current.on("typing", typingHandler);
+    socket.current.on("user_online", onlineHandler);
+    socket.current.on("user_offline", offlineHandler);
 
     return () => {
-      socket.current?.off("receive_message", handler);
+      socket.current.off("receive_message", receiveHandler);
+      socket.current.off("typing", typingHandler);
+      socket.current.off("user_online", onlineHandler);
+      socket.current.off("user_offline", offlineHandler);
     };
   }, [selectedUser]);
 
@@ -128,10 +144,30 @@ const Home = () => {
   };
 
   useEffect(() => {
+    setIsTyping(false);
     if (!selectedUser) return;
 
     fetchMessages(selectedUser._id);
   }, [selectedUser]);
+
+  const handleChange = (e) => {
+    const value = e.target.value;
+    setMessage(value);
+
+    socket.current.emit("typing", {
+      receiver: selectedUser._id,
+      typing: true,
+    });
+
+    clearTimeout(typingTimeout.current);
+
+    typingTimeout.current = setTimeout(() => {
+      socket.current.emit("typing", {
+        receiver: selectedUser._id,
+        typing: false,
+      });
+    }, 1000);
+  };
 
   return (
     <div className="h-screen flex bg-gray-100">
@@ -208,6 +244,19 @@ const Home = () => {
               </div>
             );
           })}
+          {isTyping && (
+            <div className="flex justify-start">
+              <div className="flex items-center gap-2 bg-white border rounded-xl px-4 py-2">
+                <span className="text-sm text-gray-500">Typing</span>
+
+                <div className="flex gap-1">
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]"></span>
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]"></span>
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
 
@@ -217,7 +266,7 @@ const Home = () => {
           <input
             type="text"
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={handleChange}
             placeholder="Type a message..."
             className="flex-1 border rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
           />
@@ -233,6 +282,10 @@ const Home = () => {
                   ...prevMessages,
                   { content: message, sender: currentUser.id, receiver: selectedUser._id, _id: Date.now() }
                 ]);
+                socket.current.emit("typing", {
+                  receiver: selectedUser._id,
+                  typing: false,
+                });
               }
             }}
           >
