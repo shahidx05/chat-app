@@ -31,11 +31,42 @@ const initSocket = (io) => {
         const userId = socket.user._id.toString();
         onlineUsers.set(userId, socket.id); // store the socket ID for this user
         console.log(`✅ ${socket.user.username} connected (${socket.id})`);
-
         io.emit('user_online', { userId: userId });
 
         socket.emit("online_users", [...onlineUsers.keys()]);
         // socket.emit("online_users", Array.from(onlineUsers.keys()));
+
+        const updateDeliveredMessages = async (userId) => {
+            const messages = await Message.find({
+                receiver: userId,
+                status: "sent"
+            });
+
+            await Message.updateMany(
+                {
+                    receiver: userId,
+                    status: "sent"
+                },
+                {
+                    $set: {
+                        status: "delivered"
+                    }
+                }
+            );
+
+            for (const msg of messages) {
+                const senderSocketId = onlineUsers.get(msg.sender.toString());
+
+                if (senderSocketId) {
+                    io.to(senderSocketId).emit("message_status_updated", {
+                        messageId: msg._id,
+                        status: "delivered"
+                    });
+                }
+            }
+
+        };
+        updateDeliveredMessages(userId)
 
         // console.log('a user connected', socket.id);
 
@@ -48,22 +79,70 @@ const initSocket = (io) => {
         // })
 
         socket.on('send_message', async (data) => {
+            const status = onlineUsers.has(data.receiver)
+                ? "delivered"
+                : "sent";
+
             const message = await Message.create({
                 sender: socket.user._id,
                 receiver: data.receiver,
-                content: data.message
+                content: data.message,
+                status
             });
+            if (onlineUsers.has(data.receiver)) {
+                socket.to(onlineUsers.get(data.receiver)).emit('message_status_updated', {
+                    messageId: message._id,
+                    status: "delivered"
+                });
+            }
             // console.log(`Message from ${socket.user.username}: ${msg}`);
             console.log(`Message saved to DB: ${message}`);
             // io.emit('receive_message', { user: socket.user.username, message: data.message });
-            socket.to(onlineUsers.get(data.receiver)).emit('receive_message', {
+
+
+            // socket.to(onlineUsers.get(data.receiver)).emit('receive_message', {
+            io.to([onlineUsers.get(data.receiver), socket.id]).emit('receive_message', {
                 _id: message._id,
                 sender: message.sender,
                 receiver: message.receiver,
                 content: message.content,
+                status,
                 createdAt: message.createdAt
             });
         })
+
+        socket.on("mark_seen", async ({ sender }) => {
+            // sender = user whose messages I am reading
+            const messages = await Message.find({
+                sender,
+                receiver: socket.user._id,
+                status: "delivered"
+            });
+
+            await Message.updateMany(
+                {
+                    sender,
+                    receiver: socket.user._id,
+                    status: "delivered"
+                },
+                {
+                    $set: {
+                        status: "seen"
+                    }
+                }
+            );
+
+            const senderSocketId = onlineUsers.get(sender);
+
+            if (senderSocketId) {
+                for (const msg of messages) {
+                    io.to(senderSocketId).emit("message_status_updated", {
+                        messageId: msg._id,
+                        status: "seen"
+                    });
+                }
+            }
+        });
 
         socket.on('typing', (data) => {
             socket.to(onlineUsers.get(data.receiver)).emit('typing', {

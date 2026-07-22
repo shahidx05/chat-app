@@ -11,6 +11,9 @@ const Home = () => {
   const [isTyping, setIsTyping] = useState(false);
 
   const token = localStorage.getItem('token');
+  if (!token) {
+    window.location.href = '/login';
+  }
   const currentUser = JSON.parse(localStorage.getItem("user"));
 
   const socket = useRef(null);
@@ -71,8 +74,27 @@ const Home = () => {
 
   useEffect(() => {
     const receiveHandler = (data) => {
-      if (selectedUser && String(data.sender) === String(selectedUser._id)) {
+      // if (selectedUser && String(data.sender) === String(selectedUser._id)) {
+      //   setMessages(prev => [...prev, data]);
+      // }
+      if (!selectedUser) return;
+
+      const isIncoming =
+        String(data.sender) === String(selectedUser._id);
+
+      const isOutgoing =
+        String(data.receiver) === String(selectedUser._id);
+
+      if (isIncoming || isOutgoing) {
         setMessages(prev => [...prev, data]);
+      }
+
+      if (isIncoming) {
+        setMessages(prev => [...prev, data]);
+
+        socket.current.emit("mark_seen", {
+          sender: data.sender
+        });
       }
     };
 
@@ -106,16 +128,30 @@ const Home = () => {
       selectedUser && selectedUser._id === data.userId && setSelectedUser(prev => ({ ...prev, online: false }));
     };
 
+    const statusHandler = (data) => {
+      console.log("hello")
+      console.log(`Message ${data.messageId} status updated to ${data.status}`);
+      setMessages(prev =>
+        prev.map(msg =>
+          String(msg._id) === String(data.messageId)
+            ? { ...msg, status: data.status }
+            : msg
+        )
+      );
+    };
+
     socket.current.on("receive_message", receiveHandler);
     socket.current.on("typing", typingHandler);
     socket.current.on("user_online", onlineHandler);
     socket.current.on("user_offline", offlineHandler);
+    socket.current.on("message_status_updated", statusHandler)
 
     return () => {
       socket.current.off("receive_message", receiveHandler);
       socket.current.off("typing", typingHandler);
       socket.current.off("user_online", onlineHandler);
       socket.current.off("user_offline", offlineHandler);
+      socket.current.off("message_status_updated", statusHandler)
     };
   }, [selectedUser]);
 
@@ -124,7 +160,6 @@ const Home = () => {
       try {
         const data = await getUsers();
         setUsers(data.users);
-        console.log("Fetched users:", data);
       } catch (error) {
         console.error("Error fetching users:", error);
       }
@@ -136,7 +171,6 @@ const Home = () => {
   const fetchMessages = async (userId) => {
     try {
       const data = await getMessages(userId);
-      console.log("Fetched messages:", data);
       setMessages(data.messages);
     } catch (error) {
       console.error("Error fetching messages:", error);
@@ -146,6 +180,10 @@ const Home = () => {
   useEffect(() => {
     setIsTyping(false);
     if (!selectedUser) return;
+
+    socket.current.emit("mark_seen", {
+      sender: selectedUser._id
+    });
 
     fetchMessages(selectedUser._id);
   }, [selectedUser]);
@@ -208,91 +246,127 @@ const Home = () => {
       {/* Chat Section */}
       <div className="flex-1 flex flex-col">
 
-        {/* Header */}
-        <div className="h-20 bg-white border-b flex items-center px-6">
-          <div className="h-12 w-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
-            {selectedUser ? selectedUser.name[0] : "U"}
+        {!selectedUser ? (
+          <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+            <div className="text-center max-w-md px-8">
+              <h1 className="mt-6 text-3xl font-bold text-gray-800">
+                Welcome to Chat App
+              </h1>
+
+              <p className="mt-3 text-gray-600 leading-relaxed">
+                Select a user from the sidebar to start chatting.
+              </p>
+
+            </div>
           </div>
-
-          <div className="ml-4">
-            <h2 className="font-semibold text-lg">
-              {selectedUser ? selectedUser.name : "Select a user"}
-            </h2>
-            <p className="text-sm text-green-600">
-              {selectedUser?.online ? "Online" : "Offline"}
-            </p>
-          </div>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50 space-y-4">
-
-          {messages.map((msg) => {
-            const mine = String(msg.sender) === String(currentUser.id);
-            return (
-              <div
-                key={msg._id}
-                className={`flex ${mine ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`px-4 py-2 rounded-xl max-w-sm ${mine
-                    ? "bg-blue-600 text-white"
-                    : "bg-white border"}`}
-                >
-                  {msg.content}
-                </div>
+        ) : (
+          <>
+            {/* Header */}
+            <div className="h-20 bg-white border-b flex items-center px-6">
+              <div className="h-12 w-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
+                {selectedUser ? selectedUser.name[0] : "U"}
               </div>
-            );
-          })}
-          {isTyping && (
-            <div className="flex justify-start">
-              <div className="flex items-center gap-2 bg-white border rounded-xl px-4 py-2">
-                <span className="text-sm text-gray-500">Typing</span>
 
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]"></span>
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]"></span>
-                </div>
+              <div className="ml-4">
+                <h2 className="font-semibold text-lg">
+                  {selectedUser ? selectedUser.name : "Select a user"}
+                </h2>
+                <p className="text-sm text-green-600">
+                  {selectedUser?.online ? "Online" : "Offline"}
+                </p>
               </div>
             </div>
-          )}
 
-        </div>
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-6 bg-gray-50 space-y-4">
 
-        {/* Input */}
-        <div className="bg-white border-t p-4 flex gap-3">
+              {messages.map((msg) => {
+                // console.log("Rendering message:", msg);
+                const mine = String(msg.sender) === String(currentUser.id);
+                // const statusText = mine ? msg.status || "Sent" : null;
 
-          <input
-            type="text"
-            value={message}
-            onChange={handleChange}
-            placeholder="Type a message..."
-            className="flex-1 border rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-          />
+                return (
+                  <div
+                    key={msg._id}
+                    className={`flex ${mine ? "justify-end" : "justify-start"}`}
+                  >
+                    <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+                      <div
+                        className={`px-4 py-2 rounded-xl max-w-sm ${mine
+                          ? "bg-blue-600 text-white"
+                          : "bg-white border"}`}
+                      >
+                        {msg.content}
+                      </div>
 
-          <button
-            className="bg-blue-600 text-white px-6 rounded-lg hover:bg-blue-700"
-            onClick={() => {
-              if (message.trim() !== "") {
-                socket.current?.emit("send_message", { receiver: selectedUser._id, message });
-                setMessage("");
-                // Optionally, you can also add the sent message to the messages state
-                setMessages((prevMessages) => [
-                  ...prevMessages,
-                  { content: message, sender: currentUser.id, receiver: selectedUser._id, _id: Date.now() }
-                ]);
-                socket.current.emit("typing", {
-                  receiver: selectedUser._id,
-                  typing: false,
-                });
-              }
-            }}
-          >
-            Send
-          </button>
+                      {mine && (
+                        <span
+                          className={`mt-1 text-xs ${msg.status === "seen"
+                            ? "text-green-500"
+                            : "text-gray-400"}`}
+                        >
+                          {msg.status === "seen"
+                            ? "✓✓ Seen"
+                            : msg.status === "delivered"
+                              ? "✓✓ Delivered"
+                              : "✓ Sent"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {isTyping && (
+                <div className="flex justify-start">
+                  <div className="flex items-center gap-2 bg-white border rounded-xl px-4 py-2">
+                    <span className="text-sm text-gray-500">Typing</span>
 
-        </div>
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
+                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]"></span>
+                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]"></span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+
+            {/* Input */}
+            <div className="bg-white border-t p-4 flex gap-3">
+
+              <input
+                type="text"
+                value={message}
+                onChange={handleChange}
+                placeholder="Type a message..."
+                className="flex-1 border rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+              <button
+                className="bg-blue-600 text-white px-6 rounded-lg hover:bg-blue-700"
+                onClick={() => {
+                  if (message.trim() !== "") {
+                    socket.current?.emit("send_message", { receiver: selectedUser._id, message });
+                    setMessage("");
+                    // Optionally, you can also add the sent message to the messages state
+                    // setMessages((prevMessages) => [
+                    //   ...prevMessages,
+                    //   { content: message, sender: currentUser.id, receiver: selectedUser._id, _id:  }
+                    // ]);
+                    socket.current.emit("typing", {
+                      receiver: selectedUser._id,
+                      typing: false,
+                    });
+                  }
+                }}
+              >
+                Send
+              </button>
+
+            </div>
+          </>
+        )}
 
       </div>
     </div>
