@@ -151,9 +151,20 @@ const initSocket = (io) => {
             });
         });
 
-        socket.on('disconnect', () => {
+        socket.on("disconnect", async () => {
+            const lastSeen = new Date();
+
+            await User.findByIdAndUpdate(userId, {
+                lastSeen
+            });
+
             onlineUsers.delete(userId);
-            io.emit('user_offline', { userId: userId });
+
+            io.emit("user_offline", {
+                userId,
+                lastSeen
+            });
+
             console.log(`❌ ${socket.user.username} disconnected`);
         });
     });

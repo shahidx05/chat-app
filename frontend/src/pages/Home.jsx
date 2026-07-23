@@ -18,6 +18,7 @@ const Home = () => {
 
   const socket = useRef(null);
   const typingTimeout = useRef(null);
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
     socket.current = io("http://localhost:3000", {
@@ -105,27 +106,47 @@ const Home = () => {
     };
 
     const onlineHandler = (data) => {
-      console.log(`${data.username} is online`);
       setUsers(prev =>
         prev.map(user =>
           user._id === data.userId
-            ? { ...user, online: true }
+            ? {
+              ...user,
+              online: true,
+              lastSeen: null
+            }
             : user
         )
       );
-      selectedUser && selectedUser._id === data.userId && setSelectedUser(prev => ({ ...prev, online: true }));
+
+      if (selectedUser?._id === data.userId) {
+        setSelectedUser(prev => ({
+          ...prev,
+          online: true,
+          lastSeen: null
+        }));
+      }
     };
 
     const offlineHandler = (data) => {
-      console.log(`${data.username} is offline`);
       setUsers(prev =>
         prev.map(user =>
           user._id === data.userId
-            ? { ...user, online: false }
+            ? {
+              ...user,
+              online: false,
+              lastSeen: data.lastSeen
+            }
             : user
         )
       );
-      selectedUser && selectedUser._id === data.userId && setSelectedUser(prev => ({ ...prev, online: false }));
+
+      if (selectedUser?._id === data.userId) {
+        setSelectedUser(prev => ({
+          ...prev,
+          online: false,
+          lastSeen: data.lastSeen
+        }));
+      }
     };
 
     const statusHandler = (data) => {
@@ -207,6 +228,12 @@ const Home = () => {
     }, 1000);
   };
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth"
+    });
+  }, [messages]);
+
   return (
     <div className="h-screen flex bg-gray-100">
 
@@ -221,21 +248,24 @@ const Home = () => {
           {users.map((user) => (
             <div
               key={user._id}
-              className="flex items-center gap-3 p-4 border-b cursor-pointer hover:bg-gray-100"
+              onClick={() => setSelectedUser(user)}
+              className={`flex items-center gap-3 p-4 border-b cursor-pointer transition-colors ${selectedUser?._id === user._id
+                ? "bg-blue-50"
+                : "hover:bg-gray-100"
+                }`}
             >
-              <div className="h-12 w-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
-                {user.name[0]}
+              <div className="relative">
+                <div className="h-12 w-12 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
+                  {user.name[0]}
+                </div>
+
+                {user.online && (
+                  <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 border-2 border-white"></span>
+                )}
               </div>
 
-              <div>
+              <div className="flex-1">
                 <h2 className="font-semibold">{user.name}</h2>
-                <p className="text-sm text-gray-500">
-                  <button
-                    onClick={() => setSelectedUser(user)}
-                  >
-                    Click to chat
-                  </button>
-                </p>
               </div>
             </div>
           ))}
@@ -271,8 +301,17 @@ const Home = () => {
                 <h2 className="font-semibold text-lg">
                   {selectedUser ? selectedUser.name : "Select a user"}
                 </h2>
-                <p className="text-sm text-green-600">
-                  {selectedUser?.online ? "Online" : "Offline"}
+                <p
+                  className={`text-sm ${selectedUser?.online
+                      ? "text-green-600"
+                      : "text-gray-500"
+                    }`}
+                >
+                  {selectedUser?.online
+                    ? "Online"
+                    : selectedUser?.lastSeen
+                      ? `Last seen ${new Date(selectedUser.lastSeen).toLocaleString()}`
+                      : "Offline"}
                 </p>
               </div>
             </div>
@@ -283,6 +322,12 @@ const Home = () => {
               {messages.map((msg) => {
                 // console.log("Rendering message:", msg);
                 const mine = String(msg.sender) === String(currentUser.id);
+                const messageTime = msg.createdAt
+                  ? new Date(msg.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  })
+                  : "";
                 // const statusText = mine ? msg.status || "Sent" : null;
 
                 return (
@@ -298,6 +343,10 @@ const Home = () => {
                       >
                         {msg.content}
                       </div>
+
+                      <span className="mt-1 text-[10px] text-gray-400">
+                        {messageTime}
+                      </span>
 
                       {mine && (
                         <span
@@ -316,6 +365,7 @@ const Home = () => {
                   </div>
                 );
               })}
+              <div ref={messagesEndRef}></div>
               {isTyping && (
                 <div className="flex justify-start">
                   <div className="flex items-center gap-2 bg-white border rounded-xl px-4 py-2">
